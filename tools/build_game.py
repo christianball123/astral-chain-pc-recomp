@@ -125,7 +125,8 @@ ARM64 = _platform.machine().lower() in ('aarch64', 'arm64')
 MARCH = '-march=armv8.2-a' if ARM64 else '-march=x86-64-v3'
 GEN_FLAGS = ['-O2', '-fno-strict-aliasing', '-Wno-return-type', '-Wno-unused-label', '-fvisibility=hidden',
              MARCH]
-RT_FLAGS = ['-O2', '-g', '-Wall', '-fno-strict-aliasing', MARCH]
+# VMA's Apple nullability annotations spam -Wnullability-completeness on Linux clang; keep -Wall otherwise.
+RT_FLAGS = ['-O2', '-g', '-Wall', '-Wno-nullability-completeness', '-fno-strict-aliasing', MARCH]
 GEN_DEPS = []   # the --pgo-use profile, an input of every generated chunk's compile
 
 
