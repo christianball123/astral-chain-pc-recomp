@@ -119,18 +119,24 @@ SDL3_DLLS = [UCRT / 'SDL3.dll', UCRT / 'libiconv-2.dll', UCRT / 'libopus-0.dll']
 # less of the frame (14.8 against 15.8 ms, a Z1 Extreme limited to 15 W, town, two runs each). main() builds at -O1
 # with a compiler older than MIN_O2_CLANG, or with --gen-o1.
 MIN_O2_CLANG = 22
+import platform as _platform
+ARM64 = _platform.machine().lower() in ('aarch64', 'arm64')
+# aarch64 hosts (Snapdragon handhelds / Armada OS): ARMv8.2-A has LSE atomics, fp16 and dotprod.
+MARCH = '-march=armv8.2-a' if ARM64 else '-march=x86-64-v3'
 GEN_FLAGS = ['-O2', '-fno-strict-aliasing', '-Wno-return-type', '-Wno-unused-label', '-fvisibility=hidden',
-             '-march=x86-64-v3']
-RT_FLAGS = ['-O2', '-g', '-Wall', '-fno-strict-aliasing', '-march=x86-64-v3']
+             MARCH]
+RT_FLAGS = ['-O2', '-g', '-Wall', '-fno-strict-aliasing', MARCH]
 GEN_DEPS = []   # the --pgo-use profile, an input of every generated chunk's compile
 
 
 def set_cpu(cpu):
     """Target x86-64-v3 (the default) or x86-64-v2. RT_CPU_LEVEL lets runtime/main.c's self-test check the same
     instruction set the build was compiled for."""
+    if ARM64:
+        return   # no CPU levels there: the build is armv8.2-a
     march = f'-march=x86-64-{cpu}'
-    GEN_FLAGS[GEN_FLAGS.index('-march=x86-64-v3')] = march
-    RT_FLAGS[RT_FLAGS.index('-march=x86-64-v3')] = march
+    GEN_FLAGS[GEN_FLAGS.index(MARCH)] = march
+    RT_FLAGS[RT_FLAGS.index(MARCH)] = march
     RT_FLAGS.append(f'-DRT_CPU_LEVEL={3 if cpu == "v3" else 2}')
 if WIN:
     # _WIN32_WINNT: Windows 10, the port's minimum. MSYS2's headers default to it, llvm-mingw's (the release toolchain)
@@ -902,11 +908,20 @@ def main():
         for lib in ('opus', 'vpx', 'zstd'):
             LINK_LIBS[LINK_LIBS.index(f'-l{lib}')] = f'-l:lib{lib}.a'
     if args.sysroot and not WIN:
-        # Every compile and the link: the game then needs no newer glibc than the sysroot's (the Steam Runtime's)
-        sysroot = ['--target=x86_64-linux-gnu', f'--sysroot={cmd_path(args.sysroot.resolve())}']
+        # Every compile and the link: the game then needs no newer glibc than the sysroot's (the Steam Runtime's).
+        # aarch64 AppImages have no sniper sysroot: --sysroot=/ (or omitted) builds for the host.
+        target = 'aarch64-linux-gnu' if ARM64 else 'x86_64-linux-gnu'
+        sys = args.sysroot.resolve()
+        sysroot = [f'--target={target}']
+        if sys != Path('/'):
+            sysroot.append(f'--sysroot={cmd_path(sys)}')
         GEN_FLAGS[:0] = sysroot
         RT_FLAGS[:0] = sysroot
         LINK_FLAGS[:0] = sysroot
+    elif not WIN and ARM64:
+        GEN_FLAGS[:0] = ['--target=aarch64-linux-gnu']
+        RT_FLAGS[:0] = ['--target=aarch64-linux-gnu']
+        LINK_FLAGS[:0] = ['--target=aarch64-linux-gnu']
     for tool in (CLANG, NINJA):
         if not tool.is_file():
             sys.exit(f'{tool} not found: install ' + ('MSYS2 UCRT64 clang, lld and ninja' if WIN else 'clang, lld and ninja')

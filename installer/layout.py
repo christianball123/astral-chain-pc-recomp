@@ -134,7 +134,10 @@ def release_layout(root):
         # Linux: None, the install folder's .setup-temp (installer/cli.py): the AppImage is mounted read-only, and on
         # a Steam Deck /home is often too full for the generated C while the install folder is on the SD card
         temp=root / 'temp' if WIN else None,
-        sysroot=None if WIN else root / 'llvm' / 'sysroot')
+        # Linux x86_64 release ships llvm/sysroot (sniper). aarch64 AppImages leave an empty marker folder and
+        # build against the host instead (docs/building-aarch64.md).
+        sysroot=(None if WIN else (root / 'llvm' / 'sysroot' if (root / 'llvm' / 'sysroot' / 'usr').is_dir()
+                                   else None)))
 
 
 def dev_layout(root):

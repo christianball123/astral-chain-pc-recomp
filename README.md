@@ -85,3 +85,5 @@ Astral Chain Recomp is an independent, non-commercial fan project, not affiliate
 
 [docs/building.md](docs/building.md) lists the toolchain and the steps. Everything the build writes stays under
 `build\` and `generated\`, which git ignores; run `tools/check_content.py` before a commit.
+
+Linux **aarch64** (AYN Thor / Armada OS AppImage): see [docs/building-aarch64.md](docs/building-aarch64.md).

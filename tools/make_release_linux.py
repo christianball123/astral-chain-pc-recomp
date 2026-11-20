@@ -1,7 +1,7 @@
 """Assemble the Linux release folder of docs/installer.md ("Linux release") and pack it as an AppImage.
 
     .venv/bin/python tools/make_release_linux.py --out build/release/Astral-Chain-Setup-linux \\
-        [--appimage build/release/Astral-Chain-Setup-x86_64.AppImage]
+        [--appimage build/release/Astral-Chain-Setup-<arch>.AppImage]
     .venv/bin/python tools/make_release_linux.py --out build/release/Astral-Chain-Setup-linux --prove
 
 The same model as the Windows release (tools/make_release.py, whose download cache, unpacking and checks this reuses): the
@@ -56,6 +56,11 @@ mr.WORK = _AC_CACHE / 'work'
 mr.DL = _AC_CACHE / 'dl'
 WORK = mr.WORK
 CHECK = MAIN_ROOT / 'build' / 'release-linux-check'
+import platform as _platform
+HOST_ARCH = _platform.machine().lower()
+ARM64 = HOST_ARCH in ('aarch64', 'arm64')
+# AppImage arch suffix and download pins: x86_64 (Steam Runtime sniper) or aarch64 (Armada OS / Thor native).
+APPIMAGE_ARCH = 'aarch64' if ARM64 else 'x86_64'
 
 # 23.1.5 and not the 21.1.8 of the first releases: clang 21 at -O2 builds a game whose title screen video draws corrupt
 # blocks (tools/build_game.py), and the generated code is built at -O2 since 23.
@@ -63,23 +68,38 @@ LLVM_VERSION = '23.1.5'
 LLVM_MAJOR = LLVM_VERSION.split('.')[0]
 SNIPER = '3.0.20261021.266025'
 SNIPER_URL = 'https://repo.steampowered.com/steamrt-images-sniper/snapshots'
+# aarch64 pins (AYN Thor / Armada OS); x86_64 hashes match the existing Steam Deck / sniper release path.
+_LLVM_AARCH64 = ('https://github.com/llvm/llvm-project/releases/download/llvmorg-23.1.5/'
+                 'LLVM-23.1.5-Linux-ARM64.tar.xz',
+                 '44f1e4b7a125b2763d56386a199928dd57ec32e151cc6042dce2f7b0da7bb651')
+_PY_AARCH64 = ('https://github.com/astral-sh/python-build-standalone/releases/download/20261026/'
+               'cpython-3.14.10%2B20261026-aarch64-unknown-linux-gnu-install_only.tar.gz',
+               'dcc31ce7b9ddbbffac160da7fff0cc069054f43eca52382a7d0eebf94e985b88')
+_NINJA_AARCH64 = ('https://github.com/ninja-build/ninja/releases/download/v1.13.2/ninja-linux-aarch64.zip',
+                  'fd2cacc8050a7f12a16a2e48f9e06fca5c14fc4c2bee2babb67b58be17a607fc')
+_APPIMAGE_TOOL_A64 = ('https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-aarch64.AppImage',
+                      'f0837e7448a0c1e4e650a93bb3e85802546e60654ef287576f46c71c126a9158')
+_APPIMAGE_RT_A64 = ('https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-aarch64',
+                    '00cbdfcf917cc6c0ff6d3347d59e0ca1f7f45a6df1a428a0d6d8a78664d87444')
+LLVM_TOP = f'LLVM-{LLVM_VERSION}-Linux-ARM64' if ARM64 else f'LLVM-{LLVM_VERSION}-Linux-X64'
+
 PINS = {
-    'llvm-linux': (f'https://github.com/llvm/llvm-project/releases/download/llvmorg-{LLVM_VERSION}/'
+    'llvm-linux': (_LLVM_AARCH64 if ARM64 else (f'https://github.com/llvm/llvm-project/releases/download/llvmorg-{LLVM_VERSION}/'
                    f'LLVM-{LLVM_VERSION}-Linux-X64.tar.xz',
-                   'f72edb0b36580ece7f52e23858f00c18fad4e87395ea7ad05d7e55c39f8fc78a'),
+                   'f72edb0b36580ece7f52e23858f00c18fad4e87395ea7ad05d7e55c39f8fc78a')),
     'llvm-license': (f'https://raw.githubusercontent.com/llvm/llvm-project/llvmorg-{LLVM_VERSION}/llvm/LICENSE.TXT',
                      '8d85c1057d742e597985c7d4e6320b015a9139385cff4cbae06ffc0ebe89afee'),
     'sniper-sdk': (f'{SNIPER_URL}/{SNIPER}/com.valvesoftware.SteamRuntime.Sdk-amd64%2Ci386-sniper-sysroot.tar.gz',
                    '8f71947035f97925a311b2ed753f22efcf2f13d6f1631945b8e537f8903ce2cf'),
-    'python-linux': ('https://github.com/astral-sh/python-build-standalone/releases/download/20261026/'
+    'python-linux': (_PY_AARCH64 if ARM64 else ('https://github.com/astral-sh/python-build-standalone/releases/download/20261026/'
                      'cpython-3.14.10%2B20261026-x86_64-unknown-linux-gnu-install_only.tar.gz',
-                     '1b38024924eb7f4cf0cab45d7b871d1f1991354190fccd2625ac7529a43786e2'),
+                     '1b38024924eb7f4cf0cab45d7b871d1f1991354190fccd2625ac7529a43786e2')),
     'tcl-linux-src': ('https://github.com/tcltk/tcl/archive/refs/tags/core-9-0-4.tar.gz',
                       '8c01bac92a9a8ce271b63d3aa28f09cde2c6762d6719ca671cdc8aee25391234'),
     'tk-linux-src': ('https://github.com/tcltk/tk/archive/refs/tags/core-9-0-4.tar.gz',
                      'ab9bd89fcff2e1248b7a9c097035f817fa0725285028c95686fdb92db65bc148'),
-    'ninja-linux': ('https://github.com/ninja-build/ninja/releases/download/v1.13.2/ninja-linux.zip',
-                    '5749cbc4e668273514150a80e387a957f933c6ed3f5f11e03fb30955e2bbead6'),
+    'ninja-linux': (_NINJA_AARCH64 if ARM64 else ('https://github.com/ninja-build/ninja/releases/download/v1.13.2/ninja-linux.zip',
+                    '5749cbc4e668273514150a80e387a957f933c6ed3f5f11e03fb30955e2bbead6')),
     'zstd-src': ('https://github.com/facebook/zstd/releases/download/v1.5.7/zstd-1.5.7.tar.gz',
                  'eb33e51f49a15e023950cd7825ca74a4a2b43db8354825ac24fc1b7ee09e6fa3'),
     'vulkan-headers-src': ('https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/v1.4.363.tar.gz',
@@ -87,11 +107,15 @@ PINS = {
     'vma-header': build_game.VMA_FETCH,
     # appimagetool and the type-2 runtime from release tags, not "continuous", whose uploads change under the same
     # URL and would stop the build at the hash check
-    'appimagetool': ('https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage',
-                     'ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0'),
-    'appimage-runtime': ('https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64',
-                         '2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d'),
+    'appimagetool': (_APPIMAGE_TOOL_A64 if ARM64 else ('https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage',
+                     'ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0')),
+    'appimage-runtime': (_APPIMAGE_RT_A64 if ARM64 else ('https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64',
+                         '2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d')),
 }
+# On aarch64 there is no Steam Runtime sniper sysroot; the installer builds against the host (Armada/Fedora) libc.
+if ARM64:
+    PINS.pop('sniper-sdk', None)
+
 mr.PINS.update(PINS)   # one cache (toolchain/release-dl) and one fetch for both releases
 
 # What clang, lld and the runtime build need from the LLVM release (the rest of its archive stays packed).
@@ -140,7 +164,7 @@ def tar_extract(name, dest, members, strip=0):
 # Libraries every target machine has (libc, libm, zlib, libstdc++...): anything else an llvm/bin program needs is
 # bundled beside it, since the setup must run on distributions newer or older than the build machine.
 UBIQUITOUS_LIBS = {'libc.so.6', 'libm.so.6', 'libz.so.1', 'libdl.so.2', 'libpthread.so.0', 'libgcc_s.so.1',
-                   'libstdc++.so.6', 'ld-linux-x86-64.so.2', 'liblzma.so.5'}
+                   'libstdc++.so.6', 'ld-linux-x86-64.so.2', 'ld-linux-aarch64.so.1', 'liblzma.so.5'}
 
 
 def needed_libs(path):
@@ -200,16 +224,24 @@ def check_llvm_libs(out):
 
 
 def build_llvm(out):
-    top = f'LLVM-{LLVM_VERSION}-Linux-X64'
+    top = LLVM_TOP
     src = tar_extract('llvm-linux', WORK / 'llvm-linux', [f'{top}/{m}' for m in LLVM_MEMBERS], strip=1)
     dst = out / 'llvm'
     shutil.copytree(src, dst, symlinks=True, ignore=shutil.ignore_patterns('.unpacked'))
     # lld links libxml2, whose .so.2 recent distributions no longer ship (Ubuntu 25.10+ has .so.16 only), and the
     # SDK's libxml2 needs ICU 67 the same way: carry the closure beside the LLVM binaries, reached through AppRun's
-    # LD_LIBRARY_PATH.
+    # LD_LIBRARY_PATH. On aarch64 (no sniper) use the host's libxml2 if present; otherwise leave the loader to find it.
     lib = dst / 'lib'
     lib.mkdir(exist_ok=True)
-    bundle_closure(lib, full_sysroot() / 'usr' / 'lib' / 'x86_64-linux-gnu', 'libxml2.so.2')
+    if ARM64:
+        host_lib = Path('/usr/lib64') if Path('/usr/lib64/libxml2.so.2').exists() else Path('/usr/lib/aarch64-linux-gnu')
+        if (host_lib / 'libxml2.so.2').exists() or list(host_lib.glob('libxml2.so.*')):
+            try:
+                bundle_closure(lib, host_lib, 'libxml2.so.2')
+            except SystemExit as e:
+                print(f'llvm: host libxml2 bundle skipped ({e}); AppRun LD_LIBRARY_PATH must cover it')
+    else:
+        bundle_closure(lib, full_sysroot() / 'usr' / 'lib' / 'x86_64-linux-gnu', 'libxml2.so.2')
     strip(dst / 'bin', dst / 'bin' / 'llvm-strip')
     # lld's RUNPATH ($ORIGIN/../lib) finds the bundled libxml2, but the loader does not apply it to libxml2's own
     # NEEDED entries: ICU is found only through LD_LIBRARY_PATH, as AppRun sets it for the player. The release's own
@@ -228,7 +260,7 @@ def build_llvm(out):
 def llvm_profdata():
     """The release LLVM's llvm-profdata, unpacked beside the work folder only: it converts the repository's text
     profiles at release time (make_release.pgo_profiles) and does not ship."""
-    top = f'LLVM-{LLVM_VERSION}-Linux-X64'
+    top = LLVM_TOP
     return tar_extract('llvm-linux', WORK / 'llvm-profdata', [f'{top}/bin/llvm-profdata'], strip=1) / 'bin' / 'llvm-profdata'
 
 
@@ -241,7 +273,12 @@ def strip(where, tool):
 
 def full_sysroot():
     """The sniper SDK's x86_64 compile and link files in toolchain/release-work/sniper, absolute symlinks made relative
-    (the SDK points some at /lib and /usr/lib, which outside its container are the host's)."""
+    (the SDK points some at /lib and /usr/lib, which outside its container are the host's).
+
+    On aarch64 there is no sniper image: return the host root so --sysroot=/ is a no-op for headers that live under
+    /usr, and build_game.py uses --target=aarch64-linux-gnu without pinning Steam's glibc."""
+    if ARM64:
+        return Path('/')
     root = WORK / 'sniper'
     if (root / '.relinked').is_file() and (root / 'usr/share/doc/libxft2/copyright').is_file():
         return root
@@ -259,6 +296,9 @@ def full_sysroot():
 
 
 def sysroot_cc(llvm, sysroot):
+    if ARM64:
+        # Host libc on Armada / Fedora aarch64; clang from the bundled LLVM.
+        return f'{llvm / "bin" / "clang"} --target=aarch64-linux-gnu -fuse-ld=lld'
     return f'{llvm / "bin" / "clang"} --target=x86_64-linux-gnu --sysroot={sysroot} -fuse-ld=lld'
 
 
@@ -283,6 +323,19 @@ def build_deps(out, llvm, sysroot):
         shutil.copy2(lib / name, d / 'include' / name)
 
 
+def host_sdl3():
+    """libSDL3.so.0 from the sniper sysroot (x86_64) or the host (aarch64 Armada/Fedora)."""
+    candidates = [
+        Path('/usr/lib64/libSDL3.so.0'),
+        Path('/usr/lib/aarch64-linux-gnu/libSDL3.so.0'),
+        Path('/usr/lib/libSDL3.so.0'),
+    ]
+    for p in candidates:
+        if p.exists():
+            return p.resolve()
+    raise SystemExit('libSDL3.so.0 not found on the host: install SDL3 (Armada/Fedora: sdl3)')
+
+
 def build_bin(out, llvm, sysroot):
     b = out / 'bin'
     b.mkdir(parents=True, exist_ok=True)
@@ -294,26 +347,42 @@ def build_bin(out, llvm, sysroot):
          '--cc', sysroot_cc(llvm, sysroot)])
     shutil.copy2(hac / 'hactool', b / 'hactool')
     xl = WORK / 'xlate-linux'
-    run([sys.executable, ROOT / 'tools' / 'build_xlate.py', '--out', xl, '--llvm', llvm, '--sysroot', sysroot])
+    xlate_cmd = [sys.executable, ROOT / 'tools' / 'build_xlate.py', '--out', xl, '--llvm', llvm]
+    if not ARM64:
+        xlate_cmd += ['--sysroot', sysroot]
+    run(xlate_cmd)
     shutil.copy2(xl / 'ac_xlate', b / 'ac_xlate')
     shutil.copy2(xl / 'ac_xlate.id', b / 'ac_xlate.id')
-    sdl = (sysroot / 'usr' / 'lib' / 'x86_64-linux-gnu' / 'libSDL3.so.0').resolve()
-    shutil.copy2(sdl, b / 'libSDL3.so.0')
+    if ARM64:
+        shutil.copy2(host_sdl3(), b / 'libSDL3.so.0')
+    else:
+        sdl = (sysroot / 'usr' / 'lib' / 'x86_64-linux-gnu' / 'libSDL3.so.0').resolve()
+        shutil.copy2(sdl, b / 'libSDL3.so.0')
 
 
 # ---- runtime/ ----------------------------------------------------------------------------------------------------------
 
 def runtime_lib(out, llvm, sysroot):
-    """libacrt.a (x86-64-v3) and libacrt-v2.a (x86-64-v2), so a machine without AVX2 can install too."""
+    """libacrt.a (x86-64-v3) and libacrt-v2.a (x86-64-v2), so a machine without AVX2 can install too.
+    On aarch64 there is one library (armv8.2-a); it is still named libacrt.a."""
     version = mr.lifted_version()
     rt = out / 'runtime'
-    for cpu, name in (('v3', 'libacrt.a'), ('v2', 'libacrt-v2.a')):
+    builds = (('arm64', 'libacrt.a'),) if ARM64 else (('v3', 'libacrt.a'), ('v2', 'libacrt-v2.a'))
+    for cpu, name in builds:
         build = CHECK / f'rtlib-{cpu}'
         shutil.rmtree(build, ignore_errors=True)
-        run([sys.executable, ROOT / 'tools' / 'build_game.py', '--make-runtime-lib', '--toolchain', llvm,
-             '--sysroot', sysroot, '--cpu', cpu, '--deps', out / 'runtime' / 'deps', '--ninja', out / 'bin' / 'ninja',
-             '--version', version, '--gen', MAIN_ROOT / 'generated' / version, '--out', build])
+        cmd = [sys.executable, ROOT / 'tools' / 'build_game.py', '--make-runtime-lib', '--toolchain', llvm,
+               '--deps', out / 'runtime' / 'deps', '--ninja', out / 'bin' / 'ninja',
+               '--version', version, '--gen', MAIN_ROOT / 'generated' / version, '--out', build]
+        if ARM64:
+            pass  # host target; no --sysroot / --cpu levels
+        else:
+            cmd += ['--sysroot', sysroot, '--cpu', cpu]
+        run(cmd)
         shutil.copy2(build / 'libacrt.a', rt / name)
+        if ARM64:
+            # Installer still looks for libacrt-v2.a on Linux; point it at the same archive.
+            shutil.copy2(build / 'libacrt.a', rt / 'libacrt-v2.a')
     for p in sorted((ROOT / 'runtime').rglob('*')):
         if p.suffix in mr.RUNTIME_SUFFIXES and p.is_file():
             (rt / p.relative_to(ROOT / 'runtime')).parent.mkdir(parents=True, exist_ok=True)
@@ -430,6 +499,10 @@ def build_sysroot(out, sysroot, files):
 
 def build_tk_xft(out, llvm, sysroot):
     """Replace standalone Python's no-Xft Tcl/Tk with the same version using system TrueType fonts."""
+    if ARM64:
+        # Host already has fonts; rebuilding Tcl/Tk against sniper is x86_64-only. Keep the standalone build.
+        print('aarch64: keeping python-build-standalone Tcl/Tk (no sniper Xft rebuild)')
+        return
     prefix = WORK / 'tcltk-xft'
     env = dict(os.environ, CC=sysroot_cc(llvm, sysroot),
                PKG_CONFIG_SYSROOT_DIR=str(sysroot),
@@ -502,6 +575,24 @@ def collect_licenses(out, sysroot):
     lic = out / 'licenses'
     lic.mkdir(parents=True, exist_ok=True)
     doc = sysroot / 'usr' / 'share' / 'doc'
+    # Fedora/Armada keep licences under /usr/share/licenses; Debian/sniper under usr/share/doc/*/copyright.
+    if ARM64:
+        for name, dest in (
+            ('SDL3', 'SDL3-copyright.txt'),
+            ('opus', 'opus-copyright.txt'),
+            ('libvpx', 'libvpx-copyright.txt'),
+            ('glibc', 'glibc-copyright.txt'),
+        ):
+            src = next(Path('/usr/share/licenses').glob(f'{name}*'), None)
+            if src and src.is_dir():
+                for f in sorted(src.iterdir()):
+                    if f.is_file():
+                        shutil.copy2(f, lic / f'{dest}.{f.name}')
+                        break
+            else:
+                (lic / dest).write_text(f'see the host package for {name} on this aarch64 image\n', encoding='utf-8')
+        shutil.copy2(mr.fetch('llvm-license'), lic / 'llvm-LICENSE.txt')
+        return
     pairs = [
         (mr.fetch('llvm-license'), 'llvm-LICENSE.txt'),
         (doc / 'libsdl3-0' / 'copyright', 'SDL3-copyright.txt'),
@@ -716,7 +807,15 @@ def main():
     build_deps(out, llvm, sysroot)
     build_bin(out, llvm, sysroot)
     rtlib = runtime_lib(out, llvm, sysroot)
-    build_sysroot(out, sysroot, used_sysroot_files(out, llvm, sysroot, rtlib))
+    if ARM64:
+        # No sniper sysroot to ship: the installer on Thor compiles against the host glibc/SDL3.
+        print(f'aarch64: skipping llvm/sysroot bundle (host = {sysroot})')
+        (out / 'llvm' / 'sysroot').mkdir(parents=True, exist_ok=True)
+        (out / 'llvm' / 'sysroot' / 'README.aarch64.txt').write_text(
+            'This aarch64 AppImage has no Steam Runtime sniper sysroot.\n'
+            'The installer builds astralchain against the host (Armada OS / Fedora) libc and Vulkan.\n')
+    else:
+        build_sysroot(out, sysroot, used_sysroot_files(out, llvm, sysroot, rtlib))
     build_python(out, llvm, sysroot)
     mr.build_sources(out, llvm_profdata())
     collect_licenses(out, sysroot)
@@ -727,6 +826,9 @@ def main():
     mr.sizes(out)
     if args.appimage:
         write_appimage(out, args.appimage.resolve())
+    elif ARM64:
+        # Sensible default name when the caller only passes --out.
+        print(f'hint: pass --appimage build/release/Astral-Chain-Setup-{APPIMAGE_ARCH}.AppImage to pack')
 
 
 if __name__ == '__main__':
