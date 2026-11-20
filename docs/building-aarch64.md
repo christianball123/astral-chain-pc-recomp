@@ -52,7 +52,8 @@ On an aarch64 host:
 ```
 
 The Setup AppImage contains the installer and toolchain only (no game files). It builds `astralchain` on the device
-from your own dump, same as the x86_64 release.
+from your own dump, same as the x86_64 release. It links against the host glibc (Fedora 43+ / Armada, currently up to
+GLIBC_2.43 via SDL3) — not the Steam Runtime 2.31/2.34 floor used by the x86_64 AppImage.
 
 ## Expected performance (reference)
 

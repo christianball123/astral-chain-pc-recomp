@@ -722,16 +722,17 @@ def write_appimage(out, path):
     tool.chmod(0o755)
     runtime = mr.fetch('appimage-runtime')
     path.parent.mkdir(parents=True, exist_ok=True)
-    env = dict(os.environ, ARCH='x86_64', APPIMAGE_EXTRACT_AND_RUN='1')
+    env = dict(os.environ, ARCH=APPIMAGE_ARCH, APPIMAGE_EXTRACT_AND_RUN='1')
     run([tool, '--no-appstream', '--runtime-file', runtime, out, path], env=env)
     print(f'{path}: {mr.mib(path.stat().st_size)}')
 
 
 # ---- checks -------------------------------------------------------------------------------------------------------------
 
-# The newest glibc any program or library in the folder may need: the official LLVM binaries and the cryptography
-# wheel are built against 2.34 (Ubuntu 22.04, Debian 12, SteamOS 3 have it); the game itself links the sysroot's 2.31.
-GLIBC_FLOOR = (2, 34)
+# The newest glibc any program or library in the folder may need.
+# x86_64: LLVM + cryptography wheel need 2.34 (Ubuntu 22.04 / Debian 12 / SteamOS 3); the game links sniper's 2.31.
+# aarch64: no sniper — host SDL3/Opus on Fedora 43+/Armada need ~2.38–2.43; the AppImage is for that OS family only.
+GLIBC_FLOOR = (2, 43) if ARM64 else (2, 34)
 
 
 def check_glibc(out):
