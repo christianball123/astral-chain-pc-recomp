@@ -309,6 +309,48 @@ def sysroot_cc(llvm, sysroot):
 
 # ---- runtime/deps, bin/ --------------------------------------------------------------------------------------------
 
+def host_include_dirs():
+    """Where Fedora/Armada (and Debian) keep SDL3 / Opus / libvpx headers."""
+    return [Path('/usr/include'), Path('/usr/include/aarch64-linux-gnu')]
+
+
+def copy_host_headers(dst_include, rel_dir, marker_file):
+    """Copy /usr/include/<rel_dir> into deps/include when packaging for aarch64 (no sniper sysroot)."""
+    for root in host_include_dirs():
+        src = root / rel_dir
+        if (src / marker_file).is_file() or (src.is_dir() and marker_file == '.'):
+            dest = dst_include / rel_dir
+            if dest.exists():
+                shutil.rmtree(dest)
+            shutil.copytree(src, dest, symlinks=True)
+            return
+    # Single header (opus.h sits directly under include/)
+    if '/' not in rel_dir:
+        for root in host_include_dirs():
+            src = root / rel_dir
+            if src.is_file():
+                shutil.copy2(src, dst_include / rel_dir)
+                return
+    raise SystemExit(
+        f'host headers for {rel_dir} not found under /usr/include: on Armada/Fedora run\n'
+        f'  rpm-ostree install SDL3-devel opus-devel libvpx-devel\n'
+        f'(reboot after layering), then rerun make_release_linux.py')
+
+
+def copy_host_lib(dst_lib, name):
+    """Prefer a static .a for the release link; fall back to the shared .so if that is all the host has."""
+    candidates = [
+        Path(f'/usr/lib64/{name}'),
+        Path(f'/usr/lib/aarch64-linux-gnu/{name}'),
+        Path(f'/usr/lib/{name}'),
+    ]
+    for p in candidates:
+        if p.is_file():
+            shutil.copy2(p.resolve(), dst_lib / name)
+            return True
+    return False
+
+
 def build_deps(out, llvm, sysroot):
     d = out / 'runtime' / 'deps'
     (d / 'include' / 'vma').mkdir(parents=True, exist_ok=True)
@@ -326,6 +368,16 @@ def build_deps(out, llvm, sysroot):
     shutil.copy2(lib / 'libzstd.a', d / 'lib' / 'libzstd.a')
     for name in ('zstd.h', 'zstd_errors.h'):
         shutil.copy2(lib / name, d / 'include' / name)
+    if ARM64:
+        # Sniper is x86_64-only: ship the host's SDL3/Opus/libvpx headers (and static libs) in deps/.
+        copy_host_headers(d / 'include', 'SDL3', 'SDL.h')
+        copy_host_headers(d / 'include', 'opus', 'opus.h')
+        copy_host_headers(d / 'include', 'vpx', 'vpx_decoder.h')
+        for name in ('libopus.a', 'libvpx.a'):
+            if not copy_host_lib(d / 'lib', name):
+                raise SystemExit(
+                    f'{name} not found under /usr/lib64: rpm-ostree install opus-devel libvpx-devel '
+                    f'(static libs) and reboot')
 
 
 def host_sdl3():

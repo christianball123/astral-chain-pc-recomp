@@ -16,7 +16,13 @@ This follows the same approach as [TotK recomp #492](https://github.com/valentde
 
 ## Build on the Thor
 
-Use a Fedora 43+ aarch64 container (or native Armada) with clang 21+, .NET 10 SDK, SDL3, opus, libvpx, zstd, Vulkan headers.
+Use a Fedora 43+ aarch64 container (or native Armada) with clang 21+, .NET 10 SDK, SDL3, opus, libvpx, zstd, Vulkan headers,
+`glslc` / `spirv-tools`, and the matching `-devel` packages (`SDL3-devel`, `opus-devel`, `libvpx-devel`). On Armada:
+
+```sh
+rpm-ostree install glslc spirv-tools SDL3-devel opus-devel libvpx-devel
+# reboot after layering, then continue
+```
 
 ```sh
 uv venv --python 3.12 .venv

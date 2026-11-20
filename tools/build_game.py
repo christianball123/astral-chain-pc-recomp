@@ -911,10 +911,10 @@ def main():
         # Every compile and the link: the game then needs no newer glibc than the sysroot's (the Steam Runtime's).
         # aarch64 AppImages have no sniper sysroot: --sysroot=/ (or omitted) builds for the host.
         target = 'aarch64-linux-gnu' if ARM64 else 'x86_64-linux-gnu'
-        sys = args.sysroot.resolve()
+        sysroot_path = args.sysroot.resolve()
         sysroot = [f'--target={target}']
-        if sys != Path('/'):
-            sysroot.append(f'--sysroot={cmd_path(sys)}')
+        if sysroot_path != Path('/'):
+            sysroot.append(f'--sysroot={cmd_path(sysroot_path)}')
         GEN_FLAGS[:0] = sysroot
         RT_FLAGS[:0] = sysroot
         LINK_FLAGS[:0] = sysroot
