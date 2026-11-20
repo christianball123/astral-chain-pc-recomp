@@ -536,21 +536,34 @@ def merge_update_romfs(base, update, keys_path, hactool, output, logs, expected_
         command = [str(hactool), '-x', '-y', '--disablekeywarns', '--suppresskeys', '-k', str(hactool_keys),
                    f'--basenca={base_nca}', f'--section{sections[0]}={result / "romfs.bin"}', str(update_nca)]
         code, log = run_hactool(command, environment)
-        log_path.write_text(log, encoding='utf-8')
+        log_path.write_text(log + f'\n---- exit {code} ----\n', encoding='utf-8')
         checked = '\n'.join(line for line in log.splitlines() if not UNSIGNED.match(line))
         if HACTOOL_HASH_FAIL.search(checked):
             phase('diagnose')
             raise damaged_merge_input(hactool, hactool_keys, environment, base, update, base_nca, log_path)
-        require(code == 0 and not HACTOOL_ERROR.search(checked), f'hactool merge failed; see {log_path}')
-        require(all(re.search(rf'Level {i} \(GOOD\)', log) for i in range(6)),
-                'hactool did not verify all six IVFC levels')
         image = result / 'romfs.bin'
+        levels_ok = all(re.search(rf'Level {i} \(GOOD\)', log) for i in range(6))
+        # Handhelds (Armada / limited RAM) can SIGKILL hactool after it printed Done! and flushed the
+        # image; trust IVFC + size when the log is clean rather than requiring exit status 0.
+        verified = (levels_ok and 'Done!' in log and image.is_file()
+                    and image.stat().st_size == expected_size and not HACTOOL_ERROR.search(checked))
+        if not (code == 0 and not HACTOOL_ERROR.search(checked)) and not verified:
+            require(False, f'hactool merge failed (exit {code}); see {log_path}')
+        require(levels_ok, 'hactool did not verify all six IVFC levels')
+        require(image.is_file() and image.stat().st_size == expected_size,
+                f'merged RomFS size {image.stat().st_size if image.is_file() else 0}, expected {expected_size}')
         phase('index')
-        files = index_romfs(image)
-        report = dict(status='pass', romfs_size=image.stat().st_size, romfs_sha256=sha256(image), files=files,
-                      integrity='BKTR merge; all six IVFC levels verified')
-        (result / 'index.json').write_text(json.dumps(report, indent=2) + '\n')
-        result.rename(output)
+        try:
+            files = index_romfs(image)
+            report = dict(status='pass', romfs_size=image.stat().st_size, romfs_sha256=sha256(image), files=files,
+                          integrity='BKTR merge; all six IVFC levels verified')
+            (result / 'index.json').write_text(json.dumps(report, indent=2) + '\n')
+            # shutil.move: rename(2) can fail on some FUSE/exFAT SD mounts (Odin2 / Thor removable media).
+            if output.exists():
+                shutil.rmtree(output)
+            shutil.move(str(result), str(output))
+        except OSError as e:
+            raise ValueError(f'could not finish merged RomFS in {output}: {e}; see {log_path}') from None
         return report
 
 

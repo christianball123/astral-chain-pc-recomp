@@ -22,6 +22,7 @@ line; astralchain.exe runs it at start when an enabled mod has code cheats the b
 import hashlib
 import json
 import os
+import platform
 import re
 import shutil
 import subprocess
@@ -134,7 +135,8 @@ def linux_glibc():
 
 # The bundled clang, lld and the cryptography wheel are built against glibc 2.34 (tools/make_release_linux.py
 # GLIBC_FLOOR); on an older one they cannot start
-GLIBC_NEEDED = (2, 34)
+# x86_64 AppImage: SteamOS / Ubuntu 22.04 floor. aarch64: host SDL3 on Fedora/Armada (see make_release_linux.py).
+GLIBC_NEEDED = (2, 43) if platform.machine().lower() in ('aarch64', 'arm64') else (2, 34)
 
 
 def linux_kernel():
@@ -348,6 +350,9 @@ class Check(Step):
         work.mkdir(parents=True, exist_ok=True)
         exe = work / ('hostcheck' + EXE)
         command = [str(layout.clang), '-O1', str(HOSTCHECK), '-o', str(exe)]
+        arm64 = platform.machine().lower() in ('aarch64', 'arm64')
+        if arm64:
+            command += ['--target=aarch64-linux-gnu', '-fuse-ld=lld']
         if layout.deps:
             command += ['-I', str(layout.deps / 'include')]
         if layout.sysroot:
@@ -364,10 +369,14 @@ class Check(Step):
         except ValueError:
             raise InstallError('check.host_probe_failed', code=r.returncode) from None
         ctx.reporter.log(f'host: {r.stdout.strip()}')
-        if not host['x86_64_v2']:
-            raise InstallError('check.cpu_too_old')
-        # v3 is the faster build; v2 runs on CPUs without AVX2/FMA (runtime/fma.c supplies the fused multiply-add).
-        ctx.cpu = 'v3' if host['x86_64_v3'] else 'v2'
+        if arm64 or host.get('arch') == 'aarch64':
+            # Single armv8.2-a runtime (libacrt.a); build_game.py ignores --cpu on aarch64.
+            ctx.cpu = 'v3'
+        else:
+            if not host['x86_64_v2']:
+                raise InstallError('check.cpu_too_old')
+            # v3 is the faster build; v2 runs on CPUs without AVX2/FMA (runtime/fma.c supplies the fused multiply-add).
+            ctx.cpu = 'v3' if host['x86_64_v3'] else 'v2'
         if not host['loader']:
             raise InstallError('check.vulkan_missing')
         devices = host['devices']
@@ -377,9 +386,10 @@ class Check(Step):
             raise InstallError('check.vulkan_too_old',
                                devices=', '.join(f'{d["name"]} ({d["api"][0]}.{d["api"][1]})' for d in devices))
         kernel = linux_kernel()
-        if kernel and kernel < (6, 7):
+        if kernel and kernel < (6, 7) and not arm64:
             # Without userfaultfd's asynchronous write protection nothing tracks the CPU's writes: the game copies whole
-            # pools to the GPU at each submit and its texture checks see every page as changed (docs/building.md, Linux)
+            # pools to the GPU at each submit and its texture checks see every page as changed (docs/building.md, Linux).
+            # aarch64 / Armada uses AC_SOFT_WATCH instead, so an older kernel is expected there.
             ctx.reporter.warning('warn.kernel_old', version='.'.join(map(str, kernel)))
         ctx.host = host
 

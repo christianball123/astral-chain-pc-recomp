@@ -1605,6 +1605,10 @@ static void mirror_mode(int discrete) {
 #else
     shadow_on = !sh || !*sh || strcmp(sh, "0");
 #endif
+    if (vk_ctx() && !vk_ctx()->has_external_memory_host && !shadow_on) {
+        shadow_on = 1;   // nothing to import with
+        rt_log("mem: the device has no VK_EXT_external_memory_host: shadow storage is forced on");
+    }
     if (shadow_on) rt_log("mem: shadow storage: CPU-visible pools are host-visible copies of guest memory, not imports%s",
                           sh && *sh ? " (AC_SHADOW)" : "");
     if (shadow_on) mirror_lazy = 0;   // the shadow storage holds the same pages for itself (gpu_written)

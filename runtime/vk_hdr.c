@@ -27,6 +27,7 @@
 // the highlights by a luminance ratio; the code is ours.
 #include "vk.h"
 
+#include <stdlib.h>
 #include <math.h>
 #include <string.h>
 

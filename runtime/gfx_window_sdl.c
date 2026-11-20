@@ -29,7 +29,7 @@
 
 static SDL_Window *g_win;
 static uint32_t g_ev_base;               // SDL_RegisterEvents: the user events below
-enum { EV_RUN, EV_SETTINGS, EV_CLOSE, EV_COUNT };
+enum { EV_RUN, EV_SETTINGS, EV_CLOSE, EV_TEXT_ON, EV_TEXT_OFF, EV_COUNT };
 static PlatEvent g_video_ready;          // manual-reset: SDL video is up (or failed)
 static int g_video_ok;
 static PlatOnce g_thread_once = PLAT_ONCE_INIT;
@@ -63,6 +63,13 @@ static void post(int ev) {
 double gfx_window_sdl_density(void) { return __atomic_load_n(&g_density_milli, __ATOMIC_RELAXED) / 1000.0; }
 
 SDL_Window *gfx_window_sdl(void) { return g_win; }
+
+// Fire-and-forget: never wait on the window thread from a guest/present thread. Synchronous StartTextInput
+// deadlocks on Wayland/Armada (compositor waits for a frame while the caller holds up the window loop).
+void gfx_window_text_input(int on) {
+    if (!g_win || !g_ev_base) return;
+    post(on ? EV_TEXT_ON : EV_TEXT_OFF);
+}
 
 // ---- settings: size and fullscreen
 static char g_applied_size[32];
@@ -174,6 +181,14 @@ static void handle(const SDL_Event *e) {
         return;
     }
     if (e->type == g_ev_base + EV_CLOSE) gfx_window_closed();
+    if (e->type == g_ev_base + EV_TEXT_ON) {
+        if (g_win) SDL_StartTextInput(g_win);
+        return;
+    }
+    if (e->type == g_ev_base + EV_TEXT_OFF) {
+        if (g_win) SDL_StopTextInput(g_win);
+        return;
+    }
     if (!g_win) return;
     input_sdl_event(e);
     menu_sdl_event(e);

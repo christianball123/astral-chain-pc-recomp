@@ -89,6 +89,18 @@ static HWND child(HWND parent, const wchar_t *cls, const wchar_t *text, DWORD st
     return c;
 }
 
+// SDL-only ImGui overlay seams (swkbd_sdl.c); unused on Win32.
+int swkbd_ui_active(void) { return 0; }
+void swkbd_ui_get_request(const SwkbdRequest **req, char **utf8_buf, size_t *utf8_cap, int *test) {
+    (void)req; (void)utf8_buf; (void)utf8_cap; (void)test;
+}
+void swkbd_ui_finish(int ok) { (void)ok; }
+void swkbd_ui_layout(float scale) { (void)scale; }
+void swkbd_ui_event_key(int imgui_key, int down) { (void)imgui_key; (void)down; }
+void swkbd_ui_event_text(const char *utf8) { (void)utf8; }
+void swkbd_ui_event_mouse_pos(float x, float y) { (void)x; (void)y; }
+void swkbd_ui_event_mouse_button(int button, int down) { (void)button; (void)down; }
+
 // Shows the window and waits for the answer. Returns 1 with the text in out (n units), 0 when cancelled.
 int text_entry_run(const SwkbdRequest *req, uint16_t *out, size_t cap, size_t *n) {
     static const wchar_t cls[] = L"Astral ChainTextEntry";

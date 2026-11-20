@@ -5,12 +5,16 @@
 // first quiet NaN), FPCR.DN default NaN, FPCR.FZ flushing (inputs and pre-rounding-tiny results), FPCR.RMode
 // for arithmetic / conversions / FRINTX/I, saturating FP->int conversions, fused multiply-add, ARM estimate
 // tables. Not modelled: FPSR cumulative exception bits and QC, FPCR trap enables, FP16 arithmetic (ARMv8.2).
-// FPCR.AHP is honoured by the half-precision conversions. Host assumptions: IEEE binary32/64, MXCSR in
+// FPCR.AHP is honoured by the half-precision conversions. Host assumptions: IEEE binary32/64, MXCSR (aarch64: FPCR) in
 // round-to-nearest outside the slow paths, with FTZ|DAZ equal to FPCR.FZ (cpu.h rt_fpcr_sync keeps it so); fma must be
 // correctly rounded: -march=x86-64-v3 has the FMA instruction, and the v2 build links runtime/fma.c for it.
 #pragma once
 #include <fenv.h>
+#if defined(__x86_64__)
 #include <immintrin.h>
+#elif defined(__aarch64__)
+#include <arm_neon.h>
+#endif
 #include <math.h>
 
 #include "cpu.h"
@@ -261,6 +265,20 @@ SI int simd_fe_mode(uint64_t fpcr) {
     return m[(fpcr >> 22) & 3];
 }
 
+#if defined(__aarch64__)
+// The host FPCR has the guest's RMode encoding (bits 22-23), so the guest value goes in as it is.
+#define SIMD_RC_MASK (3u << 22)
+SI unsigned simd_rm_set_rc(unsigned cur, unsigned rc) {
+    if ((cur & SIMD_RC_MASK) != rc) rt_set_fpcr((cur & ~SIMD_RC_MASK) | rc);
+    return cur;
+}
+SI unsigned simd_rm_enter(uint64_t fpcr) { return simd_rm_set_rc((unsigned)rt_get_fpcr(), (unsigned)(fpcr & SIMD_RC_MASK)); }
+SI void simd_rm_rz(void) { simd_rm_set_rc((unsigned)rt_get_fpcr(), 3u << 22); }
+SI void simd_rm_leave(unsigned old) {
+    unsigned cur = (unsigned)rt_get_fpcr();
+    if ((cur & SIMD_RC_MASK) != (old & SIMD_RC_MASK)) rt_set_fpcr((cur & ~SIMD_RC_MASK) | (old & SIMD_RC_MASK));
+}
+#else
 // MXCSR rounding control (bits 13-14) without fesetround's x87 + SSE double write; ldmxcsr only on change.
 #define SIMD_RC_MASK 0x6000u
 SI unsigned simd_rm_set_rc(unsigned cur, unsigned rc) {
@@ -279,6 +297,7 @@ SI void simd_rm_leave(unsigned old) {
     unsigned cur = _mm_getcsr();
     if ((cur & SIMD_RC_MASK) != (old & SIMD_RC_MASK)) _mm_setcsr((cur & ~SIMD_RC_MASK) | (old & SIMD_RC_MASK));
 }
+#endif
 
 // The thread's MXCSR mirrors the guest FPCR.FZ with RC = nearest whenever guest code runs (cpu.h rt_fpcr_sync), so
 // plain host FP gives the ARM result unless FPCR.RMode asks for directed rounding, which the slow paths handle.
@@ -732,13 +751,34 @@ SI void sv_fcvtn(VCTX, int sz, int part, int odd, int d, int n) {
 }
 
 // TBL / TBX with len+1 table registers
-// One byte shuffle (pshufb, SSSE3: both CPU levels have it) per table register instead of a loop over the result's
-// bytes: index k picks from register i when k - 16 * i, as a byte, is 0..15. The byte loop wrote the result one byte
-// at a time and read it back as 16, which the processor cannot forward: in play 65% of the cycles of the game's
-// quaternion and matrix helpers (main+0x9b2c30 and its neighbours, 14% of all cycles) went there.
+// One byte shuffle per table register instead of a loop over the result's bytes: index k picks from register i when
+// k - 16 * i, as a byte, is 0..15. The byte loop wrote the result one byte at a time and read it back as 16, which the
+// processor cannot forward: in play 65% of the cycles of the game's quaternion and matrix helpers (main+0x9b2c30 and
+// its neighbours, 14% of all cycles) went there.
 // The table registers are named one by one, not in a loop: under RT_VLOCALS a loop over (n + i) & 31 is not unrolled
 // before SROA at -O1, so the register index stays variable and the function's whole vr[32] stays in memory (a 520-byte
 // frame, every local register loaded and stored around each access), in exactly the TBL-heavy helpers above.
+// x86: pshufb (SSSE3). aarch64: vqtbl1q (indices >= 16 yield 0, matching the in-range mask).
+#if defined(__aarch64__)
+SI uint8x16_t sv_tbl_u128(u128 x) { uint8x16_t v; memcpy(&v, &x, 16); return v; }
+SI u128 sv_u128_tbl(uint8x16_t v) { u128 x; memcpy(&x, &v, 16); return x; }
+SI uint8x16_t sv_tbl_reg(uint8x16_t idx, uint8x16_t reg, int i, uint8x16_t *hit) {
+    uint8x16_t rel = vsubq_u8(idx, vdupq_n_u8((uint8_t)(16 * i)));
+    uint8x16_t in = vceqq_u8(vandq_u8(rel, vdupq_n_u8(0xf0)), vdupq_n_u8(0));
+    *hit = vorrq_u8(*hit, in);
+    return vandq_u8(vqtbl1q_u8(reg, rel), in);
+}
+SI void sv_tbl(VCTX, int Q, int len, int tbx, int d, int n, int m) {
+    uint8x16_t idx = sv_tbl_u128(VGET(m)), hit = vdupq_n_u8(0);
+    uint8x16_t r = sv_tbl_reg(idx, sv_tbl_u128(VGET(n)), 0, &hit);
+    if (len >= 1) r = vorrq_u8(r, sv_tbl_reg(idx, sv_tbl_u128(VGET((n + 1) & 31)), 1, &hit));
+    if (len >= 2) r = vorrq_u8(r, sv_tbl_reg(idx, sv_tbl_u128(VGET((n + 2) & 31)), 2, &hit));
+    if (len >= 3) r = vorrq_u8(r, sv_tbl_reg(idx, sv_tbl_u128(VGET((n + 3) & 31)), 3, &hit));
+    if (tbx) r = vorrq_u8(r, vbicq_u8(sv_tbl_u128(VGET(d)), hit));   // out of range: the old byte stays
+    // 64-bit form clears the upper half (like _mm_move_epi64)
+    VSET(d, sv_u128_tbl(Q ? r : vcombine_u8(vget_low_u8(r), vdup_n_u8(0))));
+}
+#else
 SI __m128i sv_tbl_reg(__m128i idx, __m128i reg, int i, __m128i *hit) {
     __m128i rel = _mm_sub_epi8(idx, _mm_set1_epi8((char)(16 * i)));
     __m128i in = _mm_cmpeq_epi8(_mm_and_si128(rel, _mm_set1_epi8((char)0xf0)), _mm_setzero_si128());
@@ -754,6 +794,7 @@ SI void sv_tbl(VCTX, int Q, int len, int tbx, int d, int n, int m) {
     if (tbx) r = _mm_or_si128(r, _mm_andnot_si128(hit, (__m128i)VGET(d)));   // out of range: the old byte stays
     VSET(d, (u128)(Q ? r : _mm_move_epi64(r)));   // the 64-bit form clears the upper half
 }
+#endif
 
 // ---- CRC32 / CRC32C (bytes = 1, 2, 4, 8)
 SI uint32_t simd_crc(const uint32_t *t, uint32_t acc, uint64_t v, int bytes) {

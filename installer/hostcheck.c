@@ -1,10 +1,13 @@
 // Host check of the installer's first step, compiled with the bundled clang at install time: does the CPU run
 // -march=x86-64-v3 code (or only x86-64-v2), and does a Vulkan 1.3 device exist. Prints one JSON object on stdout.
+// On aarch64 there are no x86-64 levels: both flags are reported true and the installer uses libacrt.a (armv8.2-a).
 // The Vulkan loader is opened at run time, so a machine without one gets "loader": false instead of a failed start.
-#include <cpuid.h>
 #include <stdio.h>
 #include <string.h>
 #include <vulkan/vulkan.h>
+#if defined(__x86_64__) || defined(_M_X64)
+#include <cpuid.h>
+#endif
 #ifdef _WIN32
 #include <windows.h>
 #define open_lib() LoadLibraryA("vulkan-1.dll")
@@ -25,6 +28,11 @@ static void json_string(const char *s) {
     putchar('"');
 }
 
+#if defined(__aarch64__)
+// No x86-64 CPU levels: the game is built for armv8.2-a. Report both true so the installer's JSON contract holds.
+static int x86_64_v2(void) { return 1; }
+static int x86_64_v3(void) { return 1; }
+#else
 // The x86-64-v2 level from CPUID: SSE3, SSSE3, SSE4.1, SSE4.2, POPCNT, CMPXCHG16B and LAHF/SAHF. Every CPU with
 // SSE4.2 has the others, but the level is what the v2 build is compiled for, so check them all.
 static int x86_64_v2(void) {
@@ -56,10 +64,16 @@ static int x86_64_v3(void) {
     if (!__get_cpuid(0x80000001, &a, &b, &c, &d)) return 0;
     return (c & (1u << 5)) != 0;   // LZCNT (ABM)
 }
+#endif
 
 int main(void) {
-    printf("{\"x86_64_v2\": %s, \"x86_64_v3\": %s, ", x86_64_v2() ? "true" : "false",
-           x86_64_v3() ? "true" : "false");
+#if defined(__aarch64__)
+    printf("{\"arch\": \"aarch64\", \"x86_64_v2\": %s, \"x86_64_v3\": %s, ",
+           x86_64_v2() ? "true" : "false", x86_64_v3() ? "true" : "false");
+#else
+    printf("{\"arch\": \"x86_64\", \"x86_64_v2\": %s, \"x86_64_v3\": %s, ",
+           x86_64_v2() ? "true" : "false", x86_64_v3() ? "true" : "false");
+#endif
     void *lib = open_lib();
     PFN_vkGetInstanceProcAddr gipa = lib ? (PFN_vkGetInstanceProcAddr)lib_sym(lib, "vkGetInstanceProcAddr") : NULL;
     if (!gipa) {
@@ -68,7 +82,7 @@ int main(void) {
     }
     printf("\"loader\": true, ");
     PFN_vkCreateInstance create = (PFN_vkCreateInstance)gipa(NULL, "vkCreateInstance");
-    VkApplicationInfo app = {.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO, .pApplicationName = "totk-install",
+    VkApplicationInfo app = {.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO, .pApplicationName = "astralchain-install",
                              .apiVersion = VK_API_VERSION_1_3};
     VkInstanceCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO, .pApplicationInfo = &app};
     VkInstance inst = VK_NULL_HANDLE;
