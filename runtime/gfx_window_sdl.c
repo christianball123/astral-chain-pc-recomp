@@ -64,6 +64,19 @@ double gfx_window_sdl_density(void) { return __atomic_load_n(&g_density_milli, _
 
 SDL_Window *gfx_window_sdl(void) { return g_win; }
 
+static void text_input_on(void *arg) {
+    (void)arg;
+    if (g_win) SDL_StartTextInput(g_win);
+}
+static void text_input_off(void *arg) {
+    (void)arg;
+    if (g_win) SDL_StopTextInput(g_win);
+}
+void gfx_window_text_input(int on) {
+    if (!g_win) return;
+    run_on_window(on ? text_input_on : text_input_off, NULL);
+}
+
 // ---- settings: size and fullscreen
 static char g_applied_size[32];
 static int g_applied_fs;

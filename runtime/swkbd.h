@@ -19,6 +19,17 @@ typedef struct {
 // game's input blocked). Returns 1 with the text in out (n units), 0 when cancelled.
 int text_entry_run(const SwkbdRequest *req, uint16_t *out, size_t cap, size_t *n);
 
+// SDL front end (swkbd_sdl.c + ui/swkbd_overlay.cpp): ImGui modal on the present path while text_entry_run waits.
+int swkbd_ui_active(void);   // any thread
+void swkbd_ui_get_request(const SwkbdRequest **req, char **utf8_buf, size_t *utf8_cap, int *test);
+void swkbd_ui_finish(int ok);   // present path: 1 confirm, 0 cancel
+void swkbd_ui_layout(float scale);   // present path: draw the modal when active
+// Window-thread events while the overlay is open (menu_sdl.cpp).
+void swkbd_ui_event_key(int imgui_key, int down);
+void swkbd_ui_event_text(const char *utf8);
+void swkbd_ui_event_mouse_pos(float x, float y);
+void swkbd_ui_event_mouse_button(int button, int down);
+
 // UTF-16 (n units) -> NUL-terminated UTF-8 in cap bytes, cut at a character boundary; the bytes written.
 size_t swkbd_utf16_to_utf8(const uint16_t *s, size_t n, char *out, size_t cap);
 // UTF-8 -> UTF-16, at most cap units (a character that does not fit whole is dropped); bad bytes become U+FFFD.
