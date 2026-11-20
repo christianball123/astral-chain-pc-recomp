@@ -459,12 +459,18 @@ def build_sources(out, profdata):
     pgo_profiles(out, profdata)
     # The shader variants players met, recorded in play and generated into generated/shader-answers.bin
     # (tools/prepare_shaders.py --recordings); tools/prepare_shaders.py reads them during the prepare step.
+    # An empty ACSANS (header only) is valid: the installer still prepares default variants from the RomFS; first play
+    # fills the driver's cache. Needed for a first aarch64 AppImage before anyone has recorded a session.
     (out / 'data').mkdir(exist_ok=True)
     shader_answers = MAIN_ROOT / 'generated' / 'shader-answers.bin'
-    if not shader_answers.is_file():
-        sys.exit('generated/shader-answers.bin is missing: record a play session and run '
-                 'tools/prepare_shaders.py --recordings')
-    shutil.copy2(shader_answers, out / 'data' / 'shader-answers.bin')
+    dest = out / 'data' / 'shader-answers.bin'
+    if shader_answers.is_file():
+        shutil.copy2(shader_answers, dest)
+    else:
+        # ACSANS v2, record size 221 (tools/prepare_shaders.py ANS_REC), zero variants
+        dest.write_bytes(b'ACSANS\x00\x00' + (2).to_bytes(4, 'little') + (221).to_bytes(4, 'little'))
+        print(f'warning: {shader_answers} missing: shipping empty ACSANS '
+              f'(play once, then tools/prepare_shaders.py --recordings … to refresh)')
     # The controller button mods' sources (tools/make_prompts_folders.py repacks them into the
     # romfs-patches-xbox/playstation overlays at install time); the release check skips them by directory name.
     copy_tree(ROOT / 'controller-ui', out / 'controller-ui', lambda r: False)
