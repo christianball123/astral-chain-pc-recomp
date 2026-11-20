@@ -1,6 +1,9 @@
 // The software keyboard's front end for SDL windows (swkbd.h). Draws an ImGui modal on the present path
 // (ui/swkbd_overlay.cpp) and blocks the guest thread until the player confirms or cancels — same contract as
 // swkbd_win.c. AC_SWKBD_TEST=ok|cancel auto-answers after the overlay opens (probes).
+//
+// AC_SWKBD_OSK=0 skips SDL_StartTextInput (system on-screen keyboard). Default is on for handhelds; the start is
+// asynchronous so it cannot deadlock the Wayland compositor against the window thread.
 #include <stdatomic.h>
 #include <string.h>
 
@@ -45,6 +48,12 @@ static size_t clean_utf16(uint16_t *t, size_t n, size_t max, uint32_t disabled, 
         if (pair) t[o++] = t[++i];
     }
     return o;
+}
+
+static int osk_wanted(void) {
+    const char *v = cfg_get("AC_SWKBD_OSK");
+    if (v && *v) return strcmp(v, "0") != 0 && strcmp(v, "false") != 0;
+    return 1;   // handheld default: show the compositor keyboard when the field focuses
 }
 
 int swkbd_ui_active(void) {
@@ -92,8 +101,8 @@ int text_entry_run(const SwkbdRequest *req, uint16_t *out, size_t cap, size_t *n
     atomic_store_explicit(&g.state, SWKBD_OPEN, memory_order_release);
     plat_mutex_unlock(&g.lock);
 
-    // On-screen keyboard / IME on the window thread (Steam Deck, Armada, Wayland compositors).
-    gfx_window_text_input(1);
+    // Async only — never run_on_window/wait here (Wayland StartTextInput deadlock).
+    if (osk_wanted()) gfx_window_text_input(1);
 
     plat_mutex_lock(&g.lock);
     while (atomic_load_explicit(&g.state, memory_order_acquire) == SWKBD_OPEN)
@@ -104,6 +113,6 @@ int text_entry_run(const SwkbdRequest *req, uint16_t *out, size_t cap, size_t *n
     atomic_store_explicit(&g.state, SWKBD_IDLE, memory_order_release);
     plat_mutex_unlock(&g.lock);
 
-    gfx_window_text_input(0);
+    if (osk_wanted()) gfx_window_text_input(0);
     return ok;
 }

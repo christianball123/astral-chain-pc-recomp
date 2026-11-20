@@ -137,7 +137,8 @@ extern "C" void swkbd_ui_layout(float scale) {
     ImGui::TextWrapped("%s", prompt);
     ImGui::Spacing();
 
-    ImGuiInputTextFlags tflags = ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CallbackCharFilter;
+    ImGuiInputTextFlags tflags = ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CallbackCharFilter |
+                                 ImGuiInputTextFlags_AutoSelectAll;
     if (req->password) tflags |= ImGuiInputTextFlags_Password;
     if (req->numeric) tflags |= ImGuiInputTextFlags_CharsDecimal;
 
@@ -145,18 +146,20 @@ extern "C" void swkbd_ui_layout(float scale) {
         ImGui::SetKeyboardFocusHere();
         focus_once = 1;
     }
+    // Wider field for touch; Enter / OSK "Done" confirms via EnterReturnsTrue.
     bool enter = ImGui::InputText("##swkbd", buf, (int)cap, tflags, filter_char, (void *)req);
     ImGui::TextDisabled("%s", ui_text(UI_SWKBD_PAD_HINT));
+    ImGui::TextDisabled("Gamepad A confirms, B cancels — even if the system keyboard is open.");
     ImGui::Spacing();
 
-    float bw = 120.0f * scale;
-    if (ImGui::Button(ui_text(UI_SWKBD_OK), ImVec2(bw, 0)) || enter) {
+    float bw = 160.0f * scale, bh = 40.0f * scale;
+    if (ImGui::Button(ui_text(UI_SWKBD_OK), ImVec2(bw, bh)) || enter) {
         swkbd_ui_finish(1);
         focus_once = armed_ok = 0;
         pad_prev = 0;
     }
     ImGui::SameLine();
-    if (ImGui::Button(ui_text(UI_SWKBD_CANCEL), ImVec2(bw, 0))) {
+    if (ImGui::Button(ui_text(UI_SWKBD_CANCEL), ImVec2(bw, bh))) {
         swkbd_ui_finish(0);
         focus_once = armed_ok = 0;
         pad_prev = 0;
