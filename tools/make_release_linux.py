@@ -351,6 +351,28 @@ def copy_host_lib(dst_lib, name):
     return False
 
 
+def host_libstdcxx_a():
+    """libstdc++.a from the host g++ (clang does not search gcc's private lib dir by default)."""
+    for cmd in ('g++', 'c++', 'gcc'):
+        try:
+            r = subprocess.run([cmd, '-print-file-name=libstdc++.a'], capture_output=True, text=True, check=False)
+        except FileNotFoundError:
+            continue
+        path = Path((r.stdout or '').strip())
+        if path.is_file() and path.name == 'libstdc++.a':
+            return path.resolve()
+    for base in (Path('/usr/lib/gcc'), Path('/usr/lib64/gcc')):
+        if not base.is_dir():
+            continue
+        for p in sorted(base.glob('*/*/libstdc++.a')):
+            if p.is_file():
+                return p.resolve()
+    for p in (Path('/usr/lib64/libstdc++.a'), Path('/usr/lib/aarch64-linux-gnu/libstdc++.a')):
+        if p.is_file():
+            return p.resolve()
+    return None
+
+
 def build_deps(out, llvm, sysroot):
     d = out / 'runtime' / 'deps'
     (d / 'include' / 'vma').mkdir(parents=True, exist_ok=True)
@@ -371,6 +393,7 @@ def build_deps(out, llvm, sysroot):
     if ARM64:
         # Sniper is x86_64-only: ship host SDL3/Opus/libvpx headers. Fedora/Armada usually have no
         # libopus.a / libvpx.a (shared only); the aarch64 game links -lopus -lvpx against the host.
+        # libstdc++.a lives under gcc's private dir — clang/lld will not find it unless we put it in deps/lib.
         copy_host_headers(d / 'include', 'SDL3', 'SDL.h')
         copy_host_headers(d / 'include', 'opus', 'opus.h')
         copy_host_headers(d / 'include', 'vpx', 'vpx_decoder.h')
@@ -379,6 +402,12 @@ def build_deps(out, llvm, sysroot):
                 print(f'deps: bundled {name} from host')
             else:
                 print(f'deps: no host {name} (will link shared -l{name[3:-2]} against the system)')
+        stdcxx = host_libstdcxx_a()
+        if stdcxx:
+            shutil.copy2(stdcxx, d / 'lib' / 'libstdc++.a')
+            print(f'deps: bundled libstdc++.a from {stdcxx}')
+        else:
+            print('deps: no host libstdc++.a (will link shared -lstdc++; install libstdc++-static / gcc-c++ to pin)')
 
 
 def host_sdl3():

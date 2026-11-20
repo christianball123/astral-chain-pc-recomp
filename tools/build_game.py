@@ -906,11 +906,14 @@ def main():
     if DEPS and not WIN:
         # A release (--deps): zstd is always built static into deps/. On x86_64 (sniper) Opus and libvpx are static
         # too. On aarch64 Fedora/Armada those are usually shared-only: keep -lopus/-lvpx unless deps shipped a .a.
+        # libstdc++.a is copied into deps/lib on aarch64 (gcc's private path); if missing, use the shared host C++ ABI.
         LINK_LIBS[LINK_LIBS.index('-lzstd')] = '-l:libzstd.a'
         for lib in ('opus', 'vpx'):
             if ARM64 and not (DEPS / 'lib' / f'lib{lib}.a').is_file():
                 continue
             LINK_LIBS[LINK_LIBS.index(f'-l{lib}')] = f'-l:lib{lib}.a'
+        if ARM64 and not (DEPS / 'lib' / 'libstdc++.a').is_file():
+            LINK_LIBS[LINK_LIBS.index('-l:libstdc++.a')] = '-lstdc++'
     if args.sysroot and not WIN:
         # Every compile and the link: the game then needs no newer glibc than the sysroot's (the Steam Runtime's).
         # aarch64 AppImages have no sniper sysroot: --sysroot=/ (or omitted) builds for the host.
