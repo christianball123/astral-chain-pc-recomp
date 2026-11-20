@@ -369,15 +369,16 @@ def build_deps(out, llvm, sysroot):
     for name in ('zstd.h', 'zstd_errors.h'):
         shutil.copy2(lib / name, d / 'include' / name)
     if ARM64:
-        # Sniper is x86_64-only: ship the host's SDL3/Opus/libvpx headers (and static libs) in deps/.
+        # Sniper is x86_64-only: ship host SDL3/Opus/libvpx headers. Fedora/Armada usually have no
+        # libopus.a / libvpx.a (shared only); the aarch64 game links -lopus -lvpx against the host.
         copy_host_headers(d / 'include', 'SDL3', 'SDL.h')
         copy_host_headers(d / 'include', 'opus', 'opus.h')
         copy_host_headers(d / 'include', 'vpx', 'vpx_decoder.h')
         for name in ('libopus.a', 'libvpx.a'):
-            if not copy_host_lib(d / 'lib', name):
-                raise SystemExit(
-                    f'{name} not found under /usr/lib64: rpm-ostree install opus-devel libvpx-devel '
-                    f'(static libs) and reboot')
+            if copy_host_lib(d / 'lib', name):
+                print(f'deps: bundled {name} from host')
+            else:
+                print(f'deps: no host {name} (will link shared -l{name[3:-2]} against the system)')
 
 
 def host_sdl3():

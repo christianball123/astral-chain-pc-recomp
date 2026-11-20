@@ -903,9 +903,12 @@ def main():
         DEPS = (args.deps or DEFAULT_DEPS).resolve()
         dlls = sorted((DEPS / 'bin').glob('*.dll')) if WIN else []
     if DEPS and not WIN:
-        # A release (--deps): Opus, libvpx and zstd go into the executable, so it needs no more than libc, Vulkan and
-        # the libSDL3.so.0 beside it
-        for lib in ('opus', 'vpx', 'zstd'):
+        # A release (--deps): zstd is always built static into deps/. On x86_64 (sniper) Opus and libvpx are static
+        # too. On aarch64 Fedora/Armada those are usually shared-only: keep -lopus/-lvpx unless deps shipped a .a.
+        LINK_LIBS[LINK_LIBS.index('-lzstd')] = '-l:libzstd.a'
+        for lib in ('opus', 'vpx'):
+            if ARM64 and not (DEPS / 'lib' / f'lib{lib}.a').is_file():
+                continue
             LINK_LIBS[LINK_LIBS.index(f'-l{lib}')] = f'-l:lib{lib}.a'
     if args.sysroot and not WIN:
         # Every compile and the link: the game then needs no newer glibc than the sysroot's (the Steam Runtime's).
