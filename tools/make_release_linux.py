@@ -31,6 +31,11 @@ The folder contains nothing derived from the game but tools/data/pgo/<version>.p
 compiles with (names of lifted functions, f_<guest address>, and their branch counts; tools/pgo_profile.py):
 check_content runs over it before the script finishes, then the
 folder's own python runs a check-only installer pass and the window's --selftest.
+
+On aarch64 (AYN Thor / Armada OS) the same script packs Astral-Chain-Setup-aarch64.AppImage with LLVM
+Linux-ARM64, python-build-standalone aarch64 and appimagetool-aarch64, and no Steam sniper sysroot (the
+game links against the host). Soft write-watch in runtime/platform/linux.c covers Armada kernels without
+userfaultfd. See docs/building-aarch64.md.
 """
 import argparse
 import os
